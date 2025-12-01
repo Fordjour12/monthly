@@ -1,0 +1,26 @@
+{
+  "name": "@Monthly/auth",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "type": "module",
+  "scripts": {},
+  "devDependencies": {
+    "@Monthly/config": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "better-auth": "catalog:",
+    "@better-auth/expo": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:",
+    "@Monthly/db": "workspace:*"
+  }
+}
