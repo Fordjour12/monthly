@@ -25,6 +25,7 @@
     "dotenv": "catalog:",
     "zod": "catalog:",
     "openai": "^4.28.4",
+    "drizzle-orm": "catalog:",
     "@Monthly/auth": "workspace:*",
     "@Monthly/db": "workspace:*"
   }

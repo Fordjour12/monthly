@@ -1,22 +1,22 @@
-import { eq, and, desc, gte, lte, lt } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
-  goals,
-  tasks,
-  habits,
-  habitLogs,
-  calendarEvents,
   aiSuggestions,
+  calendarEvents,
+  goals,
+  habitLogs,
+  habits,
+  tasks,
 } from "./schema";
 import type {
+  AISuggestion,
+  AISuggestionType,
+  CalendarEvent,
   Goal,
-  Task,
   Habit,
   HabitLog,
-  CalendarEvent,
-  AISuggestion,
   NewAISuggestion,
-  AISuggestionType,
+  Task,
 } from "./types";
 
 /**
@@ -35,7 +35,7 @@ export const goalQueries = {
       conditions.push(eq(goals.status, status));
     }
 
-    return db.query.goals.findMany({
+    return await db.query.goals.findMany({
       where: and(...conditions),
       orderBy: [desc(goals.createdAt)],
     });
@@ -45,7 +45,7 @@ export const goalQueries = {
    * Get a goal by ID
    */
   async findById(goalId: string): Promise<Goal | undefined> {
-    return db.query.goals.findFirst({
+    return await db.query.goals.findFirst({
       where: eq(goals.id, goalId),
     });
   },
@@ -96,7 +96,7 @@ export const taskQueries = {
       conditions.push(eq(tasks.goalId, filters.goalId));
     }
 
-    return db.query.tasks.findMany({
+    return await db.query.tasks.findMany({
       where: and(...conditions),
       orderBy: [desc(tasks.dueDate)],
     });
@@ -110,7 +110,7 @@ export const taskQueries = {
     startDate: Date,
     endDate: Date
   ): Promise<Task[]> {
-    return db.query.tasks.findMany({
+    return await db.query.tasks.findMany({
       where: and(
         eq(tasks.userId, userId),
         gte(tasks.dueDate, startDate),
@@ -129,7 +129,7 @@ export const taskQueries = {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    return taskQueries.findByDateRange(userId, today, tomorrow);
+    return await taskQueries.findByDateRange(userId, today, tomorrow);
   },
 
   /**
@@ -138,7 +138,7 @@ export const taskQueries = {
   async findOverdue(userId: string): Promise<Task[]> {
     const now = new Date();
 
-    return db.query.tasks.findMany({
+    return await db.query.tasks.findMany({
       where: and(
         eq(tasks.userId, userId),
         eq(tasks.status, "pending"),
@@ -152,7 +152,7 @@ export const taskQueries = {
    * Get tasks for a specific goal
    */
   async findByGoal(goalId: string): Promise<Task[]> {
-    return db.query.tasks.findMany({
+    return await db.query.tasks.findMany({
       where: eq(tasks.goalId, goalId),
       orderBy: [desc(tasks.dueDate)],
     });
@@ -167,7 +167,7 @@ export const habitQueries = {
    * Get all habits for a user
    */
   async findByUser(userId: string): Promise<Habit[]> {
-    return db.query.habits.findMany({
+    return await db.query.habits.findMany({
       where: eq(habits.userId, userId),
       orderBy: [desc(habits.createdAt)],
     });
@@ -177,7 +177,7 @@ export const habitQueries = {
    * Get a habit by ID
    */
   async findById(habitId: string): Promise<Habit | undefined> {
-    return db.query.habits.findFirst({
+    return await db.query.habits.findFirst({
       where: eq(habits.id, habitId),
     });
   },
@@ -186,7 +186,7 @@ export const habitQueries = {
    * Get habit logs for a habit
    */
   async findLogs(habitId: string, limit = 30): Promise<HabitLog[]> {
-    return db.query.habitLogs.findMany({
+    return await db.query.habitLogs.findMany({
       where: eq(habitLogs.habitId, habitId),
       orderBy: [desc(habitLogs.date)],
       limit,
@@ -205,7 +205,7 @@ export const habitQueries = {
     const dateEnd = new Date(dateStart);
     dateEnd.setDate(dateEnd.getDate() + 1);
 
-    return db.query.habitLogs.findFirst({
+    return await db.query.habitLogs.findFirst({
       where: and(
         eq(habitLogs.habitId, habitId),
         gte(habitLogs.date, dateStart),
@@ -263,7 +263,7 @@ export const calendarQueries = {
     startDate: Date,
     endDate: Date
   ): Promise<CalendarEvent[]> {
-    return db.query.calendarEvents.findMany({
+    return await db.query.calendarEvents.findMany({
       where: and(
         eq(calendarEvents.userId, userId),
         gte(calendarEvents.startTime, startDate),
@@ -282,14 +282,14 @@ export const calendarQueries = {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    return calendarQueries.findByDateRange(userId, today, tomorrow);
+    return await calendarQueries.findByDateRange(userId, today, tomorrow);
   },
 
   /**
    * Get events for a specific task
    */
   async findByTask(taskId: string): Promise<CalendarEvent[]> {
-    return db.query.calendarEvents.findMany({
+    return await db.query.calendarEvents.findMany({
       where: eq(calendarEvents.taskId, taskId),
       orderBy: [desc(calendarEvents.startTime)],
     });
@@ -346,11 +346,112 @@ export const aiQueries = {
       conditions.push(eq(aiSuggestions.isApplied, filters.isApplied));
     }
 
-    return db.query.aiSuggestions.findMany({
+    return await db.query.aiSuggestions.findMany({
       where: and(...conditions),
       orderBy: [desc(aiSuggestions.createdAt)],
       limit: filters?.limit,
     });
+  },
+
+  /**
+   * Get enhanced suggestions for a user with advanced filtering and pagination
+   */
+  async getUserSuggestionsEnhanced(
+    userId: string,
+    filters?: {
+      type?: AISuggestionType;
+      isApplied?: boolean;
+      limit?: number;
+      offset?: number;
+      search?: string;
+      dateFrom?: Date;
+      dateTo?: Date;
+      sortBy?: "createdAt" | "updatedAt" | "type";
+      sortOrder?: "asc" | "desc";
+    }
+  ): Promise<AISuggestion[]> {
+    const conditions = [eq(aiSuggestions.userId, userId)];
+
+    if (filters?.type) {
+      conditions.push(eq(aiSuggestions.type, filters.type));
+    }
+    if (filters?.isApplied !== undefined) {
+      conditions.push(eq(aiSuggestions.isApplied, filters.isApplied));
+    }
+    if (filters?.dateFrom) {
+      conditions.push(gte(aiSuggestions.createdAt, filters.dateFrom));
+    }
+    if (filters?.dateTo) {
+      conditions.push(lte(aiSuggestions.createdAt, filters.dateTo));
+    }
+
+    // Search functionality - search in content (JSON field)
+    if (filters?.search) {
+      // This is a simplified search - in production you might want full-text search
+      conditions.push(
+        sql`LOWER(CAST(${aiSuggestions.content} AS TEXT)) LIKE ${`%${filters.search.toLowerCase()}%`}`
+      );
+    }
+
+    // Determine sort order
+    let orderBy;
+    const sortField =
+      filters?.sortBy === "type"
+        ? aiSuggestions.type
+        : filters?.sortBy === "updatedAt"
+          ? aiSuggestions.updatedAt
+          : aiSuggestions.createdAt;
+
+    orderBy = filters?.sortOrder === "asc" ? [sortField] : [desc(sortField)];
+
+    return await db.query.aiSuggestions.findMany({
+      where: and(...conditions),
+      orderBy,
+      limit: filters?.limit,
+      offset: filters?.offset,
+    });
+  },
+
+  /**
+   * Get count of suggestions for a user with filters
+   */
+  async getUserSuggestionsCount(
+    userId: string,
+    filters?: {
+      type?: AISuggestionType;
+      isApplied?: boolean;
+      search?: string;
+      dateFrom?: Date;
+      dateTo?: Date;
+    }
+  ): Promise<number> {
+    const conditions = [eq(aiSuggestions.userId, userId)];
+
+    if (filters?.type) {
+      conditions.push(eq(aiSuggestions.type, filters.type));
+    }
+    if (filters?.isApplied !== undefined) {
+      conditions.push(eq(aiSuggestions.isApplied, filters.isApplied));
+    }
+    if (filters?.dateFrom) {
+      conditions.push(gte(aiSuggestions.createdAt, filters.dateFrom));
+    }
+    if (filters?.dateTo) {
+      conditions.push(lte(aiSuggestions.createdAt, filters.dateTo));
+    }
+
+    if (filters?.search) {
+      conditions.push(
+        sql`LOWER(CAST(${aiSuggestions.content} AS TEXT)) LIKE ${`%${filters.search.toLowerCase()}%`}`
+      );
+    }
+
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(aiSuggestions)
+      .where(and(...conditions));
+
+    return result[0]?.count || 0;
   },
 
   /**
@@ -359,7 +460,7 @@ export const aiQueries = {
   async getSuggestionById(
     suggestionId: string
   ): Promise<AISuggestion | undefined> {
-    return db.query.aiSuggestions.findFirst({
+    return await db.query.aiSuggestions.findFirst({
       where: eq(aiSuggestions.id, suggestionId),
     });
   },
@@ -377,10 +478,7 @@ export const aiQueries = {
   /**
    * Delete old suggestions to clean up database
    */
-  async deleteOldSuggestions(
-    userId: string,
-    daysOld: number = 30
-  ): Promise<void> {
+  async deleteOldSuggestions(userId: string, daysOld = 30): Promise<void> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
@@ -399,12 +497,12 @@ export const aiQueries = {
   async getRecentByType(
     userId: string,
     type: AISuggestionType,
-    hoursOld: number = 24
+    hoursOld = 24
   ): Promise<AISuggestion[]> {
     const cutoffDate = new Date();
     cutoffDate.setHours(cutoffDate.getHours() - hoursOld);
 
-    return db.query.aiSuggestions.findMany({
+    return await db.query.aiSuggestions.findMany({
       where: and(
         eq(aiSuggestions.userId, userId),
         eq(aiSuggestions.type, type),
@@ -444,5 +542,146 @@ export const aiQueries = {
     });
 
     return stats;
+  },
+
+  /**
+   * Archive a suggestion (soft delete)
+   */
+  async archiveSuggestion(suggestionId: string): Promise<void> {
+    await db
+      .update(aiSuggestions)
+      .set({
+        isArchived: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(aiSuggestions.id, suggestionId));
+  },
+
+  /**
+   * Restore an archived suggestion
+   */
+  async restoreSuggestion(suggestionId: string): Promise<void> {
+    await db
+      .update(aiSuggestions)
+      .set({
+        isArchived: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(aiSuggestions.id, suggestionId));
+  },
+
+  /**
+   * Duplicate a suggestion
+   */
+  async duplicateSuggestion(
+    originalSuggestionId: string,
+    userId: string
+  ): Promise<AISuggestion> {
+    const original = await db.query.aiSuggestions.findFirst({
+      where: eq(aiSuggestions.id, originalSuggestionId),
+    });
+
+    if (!original) {
+      throw new Error("Original suggestion not found");
+    }
+
+    const newId = `ai_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const duplicated = await db
+      .insert(aiSuggestions)
+      .values({
+        id: newId,
+        userId,
+        type: original.type,
+        content: original.content,
+        isApplied: false,
+        isArchived: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+
+    return duplicated[0]!;
+  },
+
+  /**
+   * Get archived suggestions
+   */
+  async getArchivedSuggestions(
+    userId: string,
+    limit = 20
+  ): Promise<AISuggestion[]> {
+    return await db.query.aiSuggestions.findMany({
+      where: and(
+        eq(aiSuggestions.userId, userId),
+        eq(aiSuggestions.isArchived, true)
+      ),
+      orderBy: [desc(aiSuggestions.updatedAt)],
+      limit,
+    });
+  },
+
+  /**
+   * Permanently delete a suggestion
+   */
+  async deleteSuggestion(suggestionId: string): Promise<void> {
+    await db.delete(aiSuggestions).where(eq(aiSuggestions.id, suggestionId));
+  },
+
+  /**
+   * Get suggestion effectiveness metrics
+   */
+  async getSuggestionEffectiveness(userId: string): Promise<{
+    totalApplied: number;
+    totalGenerated: number;
+    applicationRate: number;
+    byType: Record<
+      AISuggestionType,
+      {
+        generated: number;
+        applied: number;
+        rate: number;
+      }
+    >;
+  }> {
+    const allSuggestions = await db.query.aiSuggestions.findMany({
+      where: eq(aiSuggestions.userId, userId),
+    });
+
+    const totalGenerated = allSuggestions.length;
+    const totalApplied = allSuggestions.filter((s) => s.isApplied).length;
+    const applicationRate =
+      totalGenerated > 0 ? (totalApplied / totalGenerated) * 100 : 0;
+
+    const byType = {
+      plan: { generated: 0, applied: 0, rate: 0 },
+      briefing: { generated: 0, applied: 0, rate: 0 },
+      reschedule: { generated: 0, applied: 0, rate: 0 },
+    } as Record<
+      AISuggestionType,
+      { generated: number; applied: number; rate: number }
+    >;
+
+    allSuggestions.forEach((suggestion) => {
+      byType[suggestion.type].generated++;
+      if (suggestion.isApplied) {
+        byType[suggestion.type].applied++;
+      }
+    });
+
+    // Calculate rates
+    Object.keys(byType).forEach((type) => {
+      const typeKey = type as AISuggestionType;
+      const generated = byType[typeKey].generated;
+      const applied = byType[typeKey].applied;
+      byType[typeKey].rate = generated > 0 ? (applied / generated) * 100 : 0;
+    });
+
+    return {
+      totalApplied,
+      totalGenerated,
+      applicationRate,
+      byType,
+    };
   },
 };
