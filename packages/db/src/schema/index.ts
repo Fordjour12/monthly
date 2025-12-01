@@ -1,9 +1,9 @@
 // Auth schemas
-export * from "./auth";
 
+export * from "./ai";
+export * from "./auth";
+export * from "./calendar";
 // Feature schemas
 export * from "./goals";
-export * from "./tasks";
 export * from "./habits";
-export * from "./calendar";
-export * from "./ai";
+export * from "./tasks";

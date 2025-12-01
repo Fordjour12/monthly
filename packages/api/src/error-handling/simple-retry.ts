@@ -22,7 +22,7 @@ export class SimpleRetry {
   private static readonly DEFAULT_OPTIONS: RetryOptions = {
     maxAttempts: 3,
     baseDelay: 1000, // 1 second
-    maxDelay: 10000, // 10 seconds
+    maxDelay: 10_000, // 10 seconds
     backoffFactor: 2,
   };
 
@@ -33,7 +33,7 @@ export class SimpleRetry {
     fn: () => Promise<T>,
     options: Partial<RetryOptions> = {}
   ): Promise<RetryResult<T>> {
-    const opts = { ...this.DEFAULT_OPTIONS, ...options };
+    const opts = { ...SimpleRetry.DEFAULT_OPTIONS, ...options };
     let lastError: Error | undefined;
     let totalDelay = 0;
 
@@ -50,7 +50,7 @@ export class SimpleRetry {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         // Don't retry on certain error types
-        if (this.shouldNotRetry(lastError)) {
+        if (SimpleRetry.shouldNotRetry(lastError)) {
           break;
         }
 
@@ -61,7 +61,7 @@ export class SimpleRetry {
 
         // Calculate delay with exponential backoff
         const delay = Math.min(
-          opts.baseDelay * Math.pow(opts.backoffFactor, attempt - 1),
+          opts.baseDelay * opts.backoffFactor ** (attempt - 1),
           opts.maxDelay
         );
 
@@ -71,7 +71,7 @@ export class SimpleRetry {
           `Attempt ${attempt} failed, retrying in ${delay}ms:`,
           lastError.message
         );
-        await this.delay(delay);
+        await SimpleRetry.delay(delay);
       }
     }
 
@@ -91,8 +91,8 @@ export class SimpleRetry {
     errorType: "network" | "rate-limit" | "ai-service" | "unknown",
     options: Partial<RetryOptions> = {}
   ): Promise<RetryResult<T>> {
-    const strategyOptions = this.getStrategyOptions(errorType, options);
-    return this.execute(fn, strategyOptions);
+    const strategyOptions = SimpleRetry.getStrategyOptions(errorType, options);
+    return SimpleRetry.execute(fn, strategyOptions);
   }
 
   /**
@@ -196,7 +196,7 @@ export class SimpleRetry {
     fn: () => Promise<T>,
     options: Partial<RetryOptions> = {}
   ): () => Promise<RetryResult<T>> {
-    return () => this.execute(fn, options);
+    return () => SimpleRetry.execute(fn, options);
   }
 
   /**
@@ -206,7 +206,7 @@ export class SimpleRetry {
     functions: Array<() => Promise<T>>,
     options: Partial<RetryOptions> = {}
   ): Promise<Array<RetryResult<T>>> {
-    const promises = functions.map((fn) => this.execute(fn, options));
+    const promises = functions.map((fn) => SimpleRetry.execute(fn, options));
     return Promise.all(promises);
   }
 

@@ -58,7 +58,9 @@ export const goalQueries = {
       where: eq(tasks.goalId, goalId),
     });
 
-    if (goalTasks.length === 0) return;
+    if (goalTasks.length === 0) {
+      return;
+    }
 
     const completedTasks = goalTasks.filter((t) => t.status === "completed");
     const progress = Math.round(
@@ -236,7 +238,7 @@ export const habitQueries = {
       );
 
       if (daysDiff === streak && log.status === "completed") {
-        streak++;
+        streak += 1;
       } else {
         break;
       }
@@ -306,7 +308,7 @@ export const aiQueries = {
   async createSuggestion(
     userId: string,
     type: AISuggestionType,
-    content: any
+    content: unknown
   ): Promise<AISuggestion> {
     const id = `ai_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 

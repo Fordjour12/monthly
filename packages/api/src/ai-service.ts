@@ -3,15 +3,14 @@ import type {
   PlanSuggestionContent,
   RescheduleSuggestionContent,
 } from "@Monthly/db";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import simpleCache, { CACHE_TTL, SimpleCache } from "./cache/simple-cache";
-import simpleRateLimiter from "./rate-limiting/simple-limiter";
-import { SimpleRetry } from "./error-handling/simple-retry";
 import { FallbackHandler } from "./error-handling/fallback-handler";
+import { SimpleRetry } from "./error-handling/simple-retry";
+import simpleRateLimiter from "./rate-limiting/simple-limiter";
 
 export type AIServiceConfig = {
   apiKey: string;
-  baseUrl?: string;
   model?: string;
 };
 
@@ -65,12 +64,36 @@ export class AIService {
   private readonly client: OpenAI;
   private readonly model: string;
 
-  constructor(config: AIServiceConfig) {
-    this.client = new OpenAI({
-      apiKey: config.apiKey,
-      baseURL: config.baseUrl || "https://openrouter.ai/api/v1",
-    });
-    this.model = config.model || "anthropic/claude-3.5-sonnet";
+  constructor(config?: AIServiceConfig) {
+    // Initialize OpenAI client with proper configuration
+    const apiKey = config?.apiKey || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("OpenAI API key is required");
+    }
+
+    const baseURL =
+      config?.baseUrl ||
+      (config?.provider === "openrouter"
+        ? "https://openrouter.ai/api/v1"
+        : "https://api.openai.com/v1");
+
+    this.client = new (require("openai").default)({
+      baseURL,
+      apiKey,
+      defaultHeaders:
+        config?.provider === "openrouter"
+          ? {
+              "HTTP-Referer": "https://monthly.app",
+              "X-Title": "Monthly App",
+            }
+          : undefined,
+    }) as OpenAI;
+
+    this.model =
+      config?.model ||
+      (config?.provider === "openrouter"
+        ? "openai/gpt-4o-mini"
+        : "gpt-3.5-turbo");
   }
 
   async generatePlan(
@@ -137,7 +160,7 @@ export class AIService {
         {}
       );
 
-      if (!retryResult.success || !retryResult.data) {
+      if (!(retryResult.success && retryResult.data)) {
         throw (
           retryResult.error ||
           new Error("Failed to generate plan after retries")
@@ -177,11 +200,7 @@ export class AIService {
       };
 
       // Cache the result
-      simpleCache.set(
-        cacheKey,
-        result,
-        CACHE_TTL.PLAN_GENERATION
-      );
+      simpleCache.set(cacheKey, result, CACHE_TTL.PLAN_GENERATION);
 
       // Record usage if userId provided
       if (userId) {
@@ -194,11 +213,12 @@ export class AIService {
 
       // Try fallback if AI service fails
       if (userId) {
-        const fallbackResult = await FallbackHandler.handleAIError<PlanSuggestionContent>(
-          error instanceof Error ? error : new Error(String(error)),
-          "plan",
-          input
-        );
+        const fallbackResult =
+          await FallbackHandler.handleAIError<PlanSuggestionContent>(
+            error instanceof Error ? error : new Error(String(error)),
+            "plan",
+            input
+          );
 
         if (fallbackResult.success && fallbackResult.data) {
           return fallbackResult.data;
@@ -275,7 +295,7 @@ export class AIService {
         {}
       );
 
-      if (!retryResult.success || !retryResult.data) {
+      if (!(retryResult.success && retryResult.data)) {
         throw (
           retryResult.error ||
           new Error("Failed to generate briefing after retries")
@@ -315,11 +335,7 @@ export class AIService {
       };
 
       // Cache the result
-      simpleCache.set(
-        cacheKey,
-        result,
-        CACHE_TTL.BRIEFING_GENERATION
-      );
+      simpleCache.set(cacheKey, result, CACHE_TTL.BRIEFING_GENERATION);
 
       // Record usage if userId provided
       if (userId) {
@@ -332,11 +348,12 @@ export class AIService {
 
       // Try fallback if AI service fails
       if (userId) {
-        const fallbackResult = await FallbackHandler.handleAIError<BriefingSuggestionContent>(
-          error instanceof Error ? error : new Error(String(error)),
-          "briefing",
-          input
-        );
+        const fallbackResult =
+          await FallbackHandler.handleAIError<BriefingSuggestionContent>(
+            error instanceof Error ? error : new Error(String(error)),
+            "briefing",
+            input
+          );
 
         if (fallbackResult.success && fallbackResult.data) {
           return fallbackResult.data;
@@ -414,7 +431,7 @@ export class AIService {
         {}
       );
 
-      if (!retryResult.success || !retryResult.data) {
+      if (!(retryResult.success && retryResult.data)) {
         throw (
           retryResult.error ||
           new Error("Failed to generate reschedule after retries")
@@ -439,11 +456,7 @@ export class AIService {
       };
 
       // Cache the result
-      simpleCache.set(
-        cacheKey,
-        result,
-        CACHE_TTL.RESCHEDULE_GENERATION
-      );
+      simpleCache.set(cacheKey, result, CACHE_TTL.RESCHEDULE_GENERATION);
 
       // Record usage if userId provided
       if (userId) {
@@ -456,11 +469,12 @@ export class AIService {
 
       // Try fallback if AI service fails
       if (userId) {
-        const fallbackResult = await FallbackHandler.handleAIError<RescheduleSuggestionContent>(
-          error instanceof Error ? error : new Error(String(error)),
-          "reschedule",
-          input
-        );
+        const fallbackResult =
+          await FallbackHandler.handleAIError<RescheduleSuggestionContent>(
+            error instanceof Error ? error : new Error(String(error)),
+            "reschedule",
+            input
+          );
 
         if (fallbackResult.success && fallbackResult.data) {
           return fallbackResult.data;
@@ -621,16 +635,7 @@ let aiServiceInstance: AIService | null = null;
 
 export function getAIService(): AIService {
   if (!aiServiceInstance) {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-      throw new Error("OPENROUTER_API_KEY environment variable is required");
-    }
-
-    aiServiceInstance = new AIService({
-      apiKey,
-      baseUrl: process.env.OPENAI_BASE_URL || "https://openrouter.ai/api/v1",
-      model: process.env.AI_MODEL || "anthropic/claude-3.5-sonnet",
-    });
+    aiServiceInstance = new AIService();
   }
   return aiServiceInstance;
 }
@@ -641,7 +646,7 @@ export async function generatePlanWithCache(
   userId: string
 ): Promise<PlanSuggestionContent> {
   const aiService = getAIService();
-  return aiService.generatePlan(input, userId);
+  return await aiService.generatePlan(input, userId);
 }
 
 export async function generateBriefingWithCache(
@@ -649,7 +654,7 @@ export async function generateBriefingWithCache(
   userId: string
 ): Promise<BriefingSuggestionContent> {
   const aiService = getAIService();
-  return aiService.generateBriefing(input, userId);
+  return await aiService.generateBriefing(input, userId);
 }
 
 export async function generateRescheduleWithCache(
@@ -657,5 +662,5 @@ export async function generateRescheduleWithCache(
   userId: string
 ): Promise<RescheduleSuggestionContent> {
   const aiService = getAIService();
-  return aiService.generateReschedule(input, userId);
+  return await aiService.generateReschedule(input, userId);
 }

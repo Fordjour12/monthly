@@ -1,12 +1,12 @@
-import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
-import {
-  user,
-  goals,
-  tasks,
-  habits,
-  habitLogs,
-  calendarEvents,
+import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
+import type {
   aiSuggestions,
+  calendarEvents,
+  goals,
+  habitLogs,
+  habits,
+  tasks,
+  user,
 } from "./schema";
 
 // Select types (for reading from database)
@@ -54,7 +54,7 @@ export type CalendarEventWithTask = CalendarEvent & {
 };
 
 // AI Suggestion content types
-export interface PlanSuggestionContent {
+export type PlanSuggestionContent = {
   goals: Array<{
     title: string;
     description: string;
@@ -65,9 +65,9 @@ export interface PlanSuggestionContent {
       dueDate?: string;
     }>;
   }>;
-}
+};
 
-export interface BriefingSuggestionContent {
+export type BriefingSuggestionContent = {
   summary: string;
   todaysTasks: Array<{
     taskId: string;
@@ -86,9 +86,9 @@ export interface BriefingSuggestionContent {
     targetValue: number;
     currentValue: number;
   }>;
-}
+};
 
-export interface RescheduleSuggestionContent {
+export type RescheduleSuggestionContent = {
   reason: string;
   affectedTasks: Array<{
     taskId: string;
@@ -101,7 +101,7 @@ export interface RescheduleSuggestionContent {
     suggestedStartTime: string;
     suggestedEndTime?: string;
   }>;
-}
+};
 
 export type AISuggestionContent =
   | PlanSuggestionContent

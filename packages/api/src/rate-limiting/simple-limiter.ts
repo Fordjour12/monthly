@@ -34,8 +34,6 @@ export class SimpleRateLimiter {
     endpoint: keyof Omit<UserRateLimit, "daily" | "monthly">
   ): RateLimitStatus {
     const now = new Date();
-    const today = now.toISOString().split("T")[0];
-    const thisMonth = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
 
     // Get or initialize user limits
     const limits = this.userLimits.get(userId) || this.defaultLimits;
@@ -67,8 +65,11 @@ export class SimpleRateLimiter {
     // Check endpoint-specific limits
     const endpointLimitExceeded = endpointUsage >= endpointLimit;
 
-    const allowed =
-      !dailyLimitExceeded && !monthlyLimitExceeded && !endpointLimitExceeded;
+    const allowed = !(
+      dailyLimitExceeded ||
+      monthlyLimitExceeded ||
+      endpointLimitExceeded
+    );
     const remaining = Math.min(
       limits.daily - totalDailyUsage,
       limits.monthly - monthlyUsage,
@@ -96,9 +97,6 @@ export class SimpleRateLimiter {
     userId: string,
     endpoint: keyof Omit<UserRateLimit, "daily" | "monthly">
   ): void {
-    const today = new Date().toISOString().split("T")[0];
-    const thisMonth = `${new Date().getFullYear()}-${(new Date().getMonth() + 1).toString().padStart(2, "0")}`;
-
     // Update daily usage
     if (!this.dailyUsage.has(userId)) {
       this.dailyUsage.set(userId, new Map());
@@ -121,7 +119,6 @@ export class SimpleRateLimiter {
    * Reset daily usage (called at midnight)
    */
   resetDailyUsage(): void {
-    const today = new Date().toISOString().split("T")[0];
     console.log(`Resetting daily usage for ${this.dailyUsage.size} users`);
     this.dailyUsage.clear();
   }
@@ -172,7 +169,10 @@ export class SimpleRateLimiter {
   }> {
     const stats = [];
     for (const userId of this.userLimits.keys()) {
-      stats.push(this.getUserStats(userId));
+      stats.push({
+        userId,
+        ...this.getUserStats(userId),
+      });
     }
     return stats;
   }
@@ -211,11 +211,19 @@ const scheduleMonthlyReset = () => {
   const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0);
 
   const msUntilFirst = nextMonth.getTime() - now.getTime();
+  const MAX_TIMEOUT = 2_147_483_647; // Max 32-bit signed integer
 
-  setTimeout(() => {
-    globalRateLimiter.resetMonthlyUsage();
-    scheduleMonthlyReset(); // Schedule next month's reset
-  }, msUntilFirst);
+  if (msUntilFirst > MAX_TIMEOUT) {
+    // If time until next month is longer than max timeout, wait max timeout and check again
+    setTimeout(() => {
+      scheduleMonthlyReset();
+    }, MAX_TIMEOUT);
+  } else {
+    setTimeout(() => {
+      globalRateLimiter.resetMonthlyUsage();
+      scheduleMonthlyReset(); // Schedule next month's reset
+    }, msUntilFirst);
+  }
 };
 
 // Start the scheduling

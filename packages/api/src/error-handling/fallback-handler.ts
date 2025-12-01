@@ -4,8 +4,8 @@
  */
 
 import type {
-  PlanSuggestionContent,
   BriefingSuggestionContent,
+  PlanSuggestionContent,
   RescheduleSuggestionContent,
 } from "@Monthly/db";
 
@@ -33,14 +33,14 @@ export class FallbackHandler {
   ): FallbackResult<PlanSuggestionContent> {
     try {
       // Extract key information from user goals
-      const goals = this.extractGoals(userGoals);
+      const goals = FallbackHandler.extractGoals(userGoals);
 
       const fallbackPlan: PlanSuggestionContent = {
         goals: goals.map((goal, index) => ({
           title: goal,
           description: `Goal based on your input: ${goal}`,
           category: "personal",
-          tasks: this.generateTasksForGoal(goal, index + 1),
+          tasks: FallbackHandler.generateTasksForGoal(goal, index + 1),
         })),
       };
 
@@ -74,9 +74,6 @@ export class FallbackHandler {
       );
       const mediumPriorityTasks = todaysTasks.filter(
         (task) => task.priority === "medium"
-      );
-      const _lowPriorityTasks = todaysTasks.filter(
-        (task) => task.priority === "low"
       );
 
       const fallbackBriefing: BriefingSuggestionContent = {
@@ -124,7 +121,7 @@ export class FallbackHandler {
       const sortedTasks = backlogTasks
         .map((task) => ({
           ...task,
-          priority: this.getPriorityValue(
+          priority: FallbackHandler.getPriorityValue(
             task.priority as "low" | "medium" | "high"
           ),
           dueDate: new Date(task.dueDate),
@@ -286,7 +283,7 @@ export class FallbackHandler {
     input: any,
     options: FallbackOptions = {}
   ): Promise<FallbackResult<T>> {
-    const errorType = this.classifyError(error);
+    const errorType = FallbackHandler.classifyError(error);
 
     // Log the error if requested
     if (options.logError !== false) {
@@ -298,28 +295,30 @@ export class FallbackHandler {
     }
 
     // Save input for retry if requested
-    let _savedForRetry: string | undefined;
     if (options.preserveInput) {
-      _savedForRetry = await this.saveInputForRetry('user', type, input);
+      await FallbackHandler.saveInputForRetry("user", type, input);
     }
 
     // Generate appropriate fallback
     switch (type) {
       case "plan":
-        return this.generatePlanFallback(
+        return FallbackHandler.generatePlanFallback(
           typeof input === "string" ? input : JSON.stringify(input),
           options
         ) as unknown as FallbackResult<T>;
 
       case "briefing":
-        return this.generateBriefingFallback(
+        return FallbackHandler.generateBriefingFallback(
           input.currentDate,
           input.todaysTasks,
           options
         ) as unknown as FallbackResult<T>;
 
       case "reschedule":
-        return this.generateRescheduleFallback(input.backlogTasks, options) as unknown as FallbackResult<T>;
+        return FallbackHandler.generateRescheduleFallback(
+          input.backlogTasks,
+          options
+        ) as unknown as FallbackResult<T>;
 
       default:
         return {
