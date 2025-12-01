@@ -29,7 +29,7 @@ export class FallbackHandler {
    */
   static generatePlanFallback(
     userGoals: string,
-    options: FallbackOptions = {}
+    _options: FallbackOptions = {}
   ): FallbackResult<PlanSuggestionContent> {
     try {
       // Extract key information from user goals
@@ -66,7 +66,7 @@ export class FallbackHandler {
   static generateBriefingFallback(
     currentDate: string,
     todaysTasks: Array<{ title: string; priority: string }>,
-    options: FallbackOptions = {}
+    _options: FallbackOptions = {}
   ): FallbackResult<BriefingSuggestionContent> {
     try {
       const highPriorityTasks = todaysTasks.filter(
@@ -75,7 +75,7 @@ export class FallbackHandler {
       const mediumPriorityTasks = todaysTasks.filter(
         (task) => task.priority === "medium"
       );
-      const lowPriorityTasks = todaysTasks.filter(
+      const _lowPriorityTasks = todaysTasks.filter(
         (task) => task.priority === "low"
       );
 
@@ -117,7 +117,7 @@ export class FallbackHandler {
    */
   static generateRescheduleFallback(
     backlogTasks: Array<{ title: string; priority: string; dueDate: string }>,
-    options: FallbackOptions = {}
+    _options: FallbackOptions = {}
   ): FallbackResult<RescheduleSuggestionContent> {
     try {
       // Sort tasks by priority and due date
@@ -145,8 +145,8 @@ export class FallbackHandler {
 
         return {
           taskId: "",
-          currentDueDate: task.dueDate,
-          suggestedDueDate: newDate.toISOString().split("T")[0],
+          currentDueDate: task.dueDate.toISOString().split("T")[0] ?? "",
+          suggestedDueDate: newDate.toISOString().split("T")[0] ?? "",
         };
       });
 
@@ -258,7 +258,7 @@ export class FallbackHandler {
   static async saveInputForRetry(
     userId: string,
     type: "plan" | "briefing" | "reschedule",
-    input: any
+    _input: any
   ): Promise<string> {
     const retryId = `retry_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -280,7 +280,7 @@ export class FallbackHandler {
   /**
    * Handle AI service error with appropriate fallback
    */
-  static handleAIError<T>(
+  static async handleAIError<T>(
     error: Error,
     type: "plan" | "briefing" | "reschedule",
     input: any,
@@ -298,9 +298,9 @@ export class FallbackHandler {
     }
 
     // Save input for retry if requested
-    let savedForRetry: string | undefined;
+    let _savedForRetry: string | undefined;
     if (options.preserveInput) {
-      savedForRetry = await this.saveInputForRetry('user', type, input);
+      _savedForRetry = await this.saveInputForRetry('user', type, input);
     }
 
     // Generate appropriate fallback
@@ -309,17 +309,17 @@ export class FallbackHandler {
         return this.generatePlanFallback(
           typeof input === "string" ? input : JSON.stringify(input),
           options
-        );
+        ) as unknown as FallbackResult<T>;
 
       case "briefing":
         return this.generateBriefingFallback(
           input.currentDate,
           input.todaysTasks,
           options
-        );
+        ) as unknown as FallbackResult<T>;
 
       case "reschedule":
-        return this.generateRescheduleFallback(input.backlogTasks, options);
+        return this.generateRescheduleFallback(input.backlogTasks, options) as unknown as FallbackResult<T>;
 
       default:
         return {

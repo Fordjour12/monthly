@@ -7,13 +7,14 @@ import {
 import type { RouterClient } from "@orpc/server";
 import { z } from "zod";
 import {
-  generatePlanWithCache,
   generateBriefingWithCache,
+  generatePlanWithCache,
   generateRescheduleWithCache,
+  getAIService,
 } from "../ai-service";
 import { protectedProcedure } from "../index";
-import { getSuggestionApplicator } from "../suggestion-applicator";
 import simpleRateLimiter from "../rate-limiting/simple-limiter";
+import { getSuggestionApplicator } from "../suggestion-applicator";
 
 export const aiRouter = {
   /**
