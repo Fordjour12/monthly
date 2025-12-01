@@ -11,3 +11,4 @@ catalog:
   zod: ^4.1.11
   "@orpc/client": ^1.10.0
   "@better-auth/expo": ^1.4.0
+  drizzle-orm: ^0.33.0
