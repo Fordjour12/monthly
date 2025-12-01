@@ -14,8 +14,8 @@ This architecture uses a modern, type-safe stack designed for performance and de
 - **Navigation**: [Expo Router](https://docs.expo.dev/router/introduction/) (File-based routing) or React Navigation.
 
 ### UI & Styling
-- **Styling**: [NativeWind](https://www.nativewind.dev/) (Tailwind CSS for React Native) for rapid, consistent styling.
-- **Components**: Custom component library built on top of unstyled primitives (like Radix UI for mobile) or a lightweight library like `tamagui` or `gluestack-ui`.
+- **Styling**: [uniwind](https://docs.uniwind.dev/) (Tailwind CSS for React Native) for rapid, consistent styling.
+- **Components**: Custom component library built on top of unstyled primitives (like heroui-native for mobile).
 - **Icons**: Lucide React Native.
 
 ### Key Libraries

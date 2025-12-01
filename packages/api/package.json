@@ -24,6 +24,7 @@
     "hono": "catalog:",
     "dotenv": "catalog:",
     "zod": "catalog:",
+    "openai": "^4.28.4",
     "@Monthly/auth": "workspace:*",
     "@Monthly/db": "workspace:*"
   }

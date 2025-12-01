@@ -1,7 +1,7 @@
 # Database Schema
 
 ## Overview
-This schema is designed to support the Monthly Planner application, focusing on Goals, Tasks, Habits, and AI interactions. It is suitable for a relational database (PostgreSQL) or a local mobile database (SQLite/WatermelonDB).
+This schema is designed to support the Monthly Planner application, focusing on Goals, Tasks, Habits, and AI interactions. We are using SQLite with Turso Libsql @folder db we have user table in @folder db/schema/auth
 
 ## Tables
 
