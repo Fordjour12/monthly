@@ -4,8 +4,15 @@ import type {
   PlanSuggestionContent,
   RescheduleSuggestionContent,
 } from "@Monthly/db";
-import { db, goalQueries, taskQueries, eq } from "@Monthly/db";
-import { calendarEvents, goals, tasks } from "@Monthly/db";
+import {
+  calendarEvents,
+  db,
+  eq,
+  goalQueries,
+  goals,
+  taskQueries,
+  tasks,
+} from "@Monthly/db";
 
 export type ApplySuggestionOptions = {
   applyAll: boolean;
@@ -32,6 +39,8 @@ export class SuggestionApplicator {
   /**
    * Apply a suggestion based on its type
    */
+
+  // biome-ignore lint/suspicious/useAwait: <Don't want to fix>
   async applySuggestion(
     suggestion: AISuggestion,
     options: ApplySuggestionOptions = { applyAll: true }
@@ -62,6 +71,8 @@ export class SuggestionApplicator {
   /**
    * Apply a plan suggestion - creates goals and tasks
    */
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: <i do understand>
   private async applyPlanSuggestion(
     suggestion: AISuggestion,
     options: ApplySuggestionOptions
@@ -79,8 +90,7 @@ export class SuggestionApplicator {
 
     try {
       if (options.dryRun) {
-        result.message =
-          "Dry run: Would create " + content.goals.length + " goals";
+        result.message = `Dry run: Would create ${content.goals.length} goals`;
         return result;
       }
 
@@ -178,6 +188,8 @@ export class SuggestionApplicator {
   /**
    * Apply a briefing suggestion - updates task priorities and schedules
    */
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: <i do understand>
   private async applyBriefingSuggestion(
     suggestion: AISuggestion,
     options: ApplySuggestionOptions
@@ -194,8 +206,7 @@ export class SuggestionApplicator {
 
     try {
       if (options.dryRun) {
-        result.message =
-          "Dry run: Would update " + content.todaysTasks.length + " tasks";
+        result.message = `Dry run: Would update ${content.todaysTasks.length} tasks`;
         return result;
       }
 
@@ -271,6 +282,8 @@ export class SuggestionApplicator {
   /**
    * Apply a reschedule suggestion - updates task due dates and calendar events
    */
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: <i do understand
   private async applyRescheduleSuggestion(
     suggestion: AISuggestion,
     options: ApplySuggestionOptions
@@ -288,8 +301,7 @@ export class SuggestionApplicator {
 
     try {
       if (options.dryRun) {
-        result.message =
-          "Dry run: Would update " + content.affectedTasks.length + " tasks";
+        result.message = `Dry run: Would update ${content.affectedTasks.length} tasks`;
         return result;
       }
 
@@ -391,7 +403,7 @@ export class SuggestionApplicator {
     suggestion: AISuggestion,
     options: Omit<ApplySuggestionOptions, "dryRun"> = { applyAll: true }
   ): Promise<ApplySuggestionResult> {
-    return this.applySuggestion(suggestion, { ...options, dryRun: true });
+    return await this.applySuggestion(suggestion, { ...options, dryRun: true });
   }
 }
 

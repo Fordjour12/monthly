@@ -4,6 +4,10 @@ import type {
   RescheduleSuggestionContent,
 } from "@Monthly/db";
 import OpenAI from "openai";
+import simpleCache, { CACHE_TTL, SimpleCache } from "./cache/simple-cache";
+import simpleRateLimiter from "./rate-limiting/simple-limiter";
+import { SimpleRetry } from "./error-handling/simple-retry";
+import { FallbackHandler } from "./error-handling/fallback-handler";
 
 export type AIServiceConfig = {
   apiKey: string;
@@ -69,37 +73,82 @@ export class AIService {
     this.model = config.model || "anthropic/claude-3.5-sonnet";
   }
 
-  async generatePlan(input: GeneratePlanInput): Promise<PlanSuggestionContent> {
+  async generatePlan(
+    input: GeneratePlanInput,
+    userId?: string
+  ): Promise<PlanSuggestionContent> {
+    // Check cache first
+    const cacheKey = SimpleCache.generateKey("plan", {
+      userGoals: input.userGoals,
+      currentMonth: input.currentMonth,
+      existingCommitments: input.existingCommitments,
+      workHours: input.workHours,
+      energyPatterns: input.energyPatterns,
+      preferredTimes: input.preferredTimes,
+    });
+
+    const cached = simpleCache.get<PlanSuggestionContent>(cacheKey);
+    if (cached) {
+      console.log("Cache hit for plan generation");
+      return cached;
+    }
+
+    // Check rate limits if userId provided
+    if (userId) {
+      const rateLimit = simpleRateLimiter.checkLimit(userId, "plan");
+      if (!rateLimit.allowed) {
+        throw new Error(
+          `Rate limit exceeded. Try again after ${rateLimit.resetTime.toLocaleTimeString()}. Remaining: ${rateLimit.remaining}`
+        );
+      }
+    }
+
     const prompt = this.buildPlanPrompt(input);
 
     try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an intelligent monthly planning assistant. Your task is to transform user goals into a structured, actionable monthly plan. Always respond with valid JSON only.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 4000,
-      });
+      // Use retry logic for AI call
+      const retryResult = await SimpleRetry.executeWithStrategy(
+        async () => {
+          const response = await this.client.chat.completions.create({
+            model: this.model,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are an intelligent monthly planning assistant. Your task is to transform user goals into a structured, actionable monthly plan. Always respond with valid JSON only.",
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+            temperature: 0.7,
+            max_tokens: 4000,
+          });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error("No response from AI model");
+          const content = response.choices[0]?.message?.content;
+          if (!content) {
+            throw new Error("No response from AI model");
+          }
+
+          return content;
+        },
+        "ai-service",
+        {}
+      );
+
+      if (!retryResult.success || !retryResult.data) {
+        throw (
+          retryResult.error ||
+          new Error("Failed to generate plan after retries")
+        );
       }
 
       // Parse JSON response
-      const parsed = JSON.parse(content);
+      const parsed = JSON.parse(retryResult.data);
 
       // Transform to match our PlanSuggestionContent interface
-      return {
+      const result: PlanSuggestionContent = {
         goals:
           parsed.weekly_breakdown?.map(
             (week: {
@@ -126,8 +175,36 @@ export class AIService {
             })
           ) || [],
       };
+
+      // Cache the result
+      simpleCache.set(
+        cacheKey,
+        result,
+        CACHE_TTL.PLAN_GENERATION
+      );
+
+      // Record usage if userId provided
+      if (userId) {
+        simpleRateLimiter.recordUsage(userId, "plan");
+      }
+
+      return result;
     } catch (error) {
       console.error("AI Plan Generation Error:", error);
+
+      // Try fallback if AI service fails
+      if (userId) {
+        const fallbackResult = await FallbackHandler.handleAIError<PlanSuggestionContent>(
+          error instanceof Error ? error : new Error(String(error)),
+          "plan",
+          input
+        );
+
+        if (fallbackResult.success && fallbackResult.data) {
+          return fallbackResult.data;
+        }
+      }
+
       throw new Error(
         `Failed to generate plan: ${error instanceof Error ? error.message : "Unknown error"}`
       );
@@ -135,36 +212,79 @@ export class AIService {
   }
 
   async generateBriefing(
-    input: GenerateBriefingInput
+    input: GenerateBriefingInput,
+    userId?: string
   ): Promise<BriefingSuggestionContent> {
+    // Check cache first
+    const cacheKey = SimpleCache.generateKey("briefing", {
+      currentDate: input.currentDate,
+      todaysTasks: input.todaysTasks,
+      yesterdayProgress: input.yesterdayProgress,
+      habitStreaks: input.habitStreaks,
+      nearDeadlines: input.nearDeadlines,
+      energyLevels: input.energyLevels,
+    });
+
+    const cached = simpleCache.get<BriefingSuggestionContent>(cacheKey);
+    if (cached) {
+      console.log("Cache hit for briefing generation");
+      return cached;
+    }
+
+    // Check rate limits if userId provided
+    if (userId) {
+      const rateLimit = simpleRateLimiter.checkLimit(userId, "briefing");
+      if (!rateLimit.allowed) {
+        throw new Error(
+          `Rate limit exceeded. Try again after ${rateLimit.resetTime.toLocaleTimeString()}. Remaining: ${rateLimit.remaining}`
+        );
+      }
+    }
+
     const prompt = this.buildBriefingPrompt(input);
 
     try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a daily productivity coach. Create a personalized daily briefing based on the user's plan and progress. Always respond with valid JSON only.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.6,
-        max_tokens: 2000,
-      });
+      // Use retry logic for AI call
+      const retryResult = await SimpleRetry.executeWithStrategy(
+        async () => {
+          const response = await this.client.chat.completions.create({
+            model: this.model,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are a daily productivity coach. Create a personalized daily briefing based on the user's plan and progress. Always respond with valid JSON only.",
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+            temperature: 0.6,
+            max_tokens: 2000,
+          });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error("No response from AI model");
+          const content = response.choices[0]?.message?.content;
+          if (!content) {
+            throw new Error("No response from AI model");
+          }
+
+          return content;
+        },
+        "ai-service",
+        {}
+      );
+
+      if (!retryResult.success || !retryResult.data) {
+        throw (
+          retryResult.error ||
+          new Error("Failed to generate briefing after retries")
+        );
       }
 
-      const parsed = JSON.parse(content);
+      const parsed = JSON.parse(retryResult.data);
 
-      return {
+      const result: BriefingSuggestionContent = {
         summary: parsed.greeting || "Daily briefing ready",
         todaysTasks:
           parsed.task_priorities?.map(
@@ -193,8 +313,36 @@ export class AIService {
           })
         ),
       };
+
+      // Cache the result
+      simpleCache.set(
+        cacheKey,
+        result,
+        CACHE_TTL.BRIEFING_GENERATION
+      );
+
+      // Record usage if userId provided
+      if (userId) {
+        simpleRateLimiter.recordUsage(userId, "briefing");
+      }
+
+      return result;
     } catch (error) {
       console.error("AI Briefing Generation Error:", error);
+
+      // Try fallback if AI service fails
+      if (userId) {
+        const fallbackResult = await FallbackHandler.handleAIError<BriefingSuggestionContent>(
+          error instanceof Error ? error : new Error(String(error)),
+          "briefing",
+          input
+        );
+
+        if (fallbackResult.success && fallbackResult.data) {
+          return fallbackResult.data;
+        }
+      }
+
       throw new Error(
         `Failed to generate briefing: ${error instanceof Error ? error.message : "Unknown error"}`
       );
@@ -202,36 +350,80 @@ export class AIService {
   }
 
   async generateReschedule(
-    input: GenerateRescheduleInput
+    input: GenerateRescheduleInput,
+    userId?: string
   ): Promise<RescheduleSuggestionContent> {
+    // Check cache first
+    const cacheKey = SimpleCache.generateKey("reschedule", {
+      currentWeek: input.currentWeek,
+      backlogTasks: input.backlogTasks,
+      completionHistory: input.completionHistory,
+      deadlinePressure: input.deadlinePressure,
+      stressLevel: input.stressLevel,
+      energyTrends: input.energyTrends,
+      fixedCommitments: input.fixedCommitments,
+    });
+
+    const cached = simpleCache.get<RescheduleSuggestionContent>(cacheKey);
+    if (cached) {
+      console.log("Cache hit for reschedule generation");
+      return cached;
+    }
+
+    // Check rate limits if userId provided
+    if (userId) {
+      const rateLimit = simpleRateLimiter.checkLimit(userId, "reschedule");
+      if (!rateLimit.allowed) {
+        throw new Error(
+          `Rate limit exceeded. Try again after ${rateLimit.resetTime.toLocaleTimeString()}. Remaining: ${rateLimit.remaining}`
+        );
+      }
+    }
+
     const prompt = this.buildReschedulePrompt(input);
 
     try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an intelligent schedule optimizer. Automatically reschedule incomplete tasks and adapt the plan based on progress patterns. Always respond with valid JSON only.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.5,
-        max_tokens: 3000,
-      });
+      // Use retry logic for AI call
+      const retryResult = await SimpleRetry.executeWithStrategy(
+        async () => {
+          const response = await this.client.chat.completions.create({
+            model: this.model,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are an intelligent schedule optimizer. Automatically reschedule incomplete tasks and adapt the plan based on progress patterns. Always respond with valid JSON only.",
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+            temperature: 0.5,
+            max_tokens: 3000,
+          });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error("No response from AI model");
+          const content = response.choices[0]?.message?.content;
+          if (!content) {
+            throw new Error("No response from AI model");
+          }
+
+          return content;
+        },
+        "ai-service",
+        {}
+      );
+
+      if (!retryResult.success || !retryResult.data) {
+        throw (
+          retryResult.error ||
+          new Error("Failed to generate reschedule after retries")
+        );
       }
 
-      const parsed = JSON.parse(content);
+      const parsed = JSON.parse(retryResult.data);
 
-      return {
+      const result: RescheduleSuggestionContent = {
         reason:
           parsed.rescheduling_strategy ||
           "Optimizing schedule based on progress",
@@ -245,8 +437,36 @@ export class AIService {
           ) || [],
         affectedEvents: [],
       };
+
+      // Cache the result
+      simpleCache.set(
+        cacheKey,
+        result,
+        CACHE_TTL.RESCHEDULE_GENERATION
+      );
+
+      // Record usage if userId provided
+      if (userId) {
+        simpleRateLimiter.recordUsage(userId, "reschedule");
+      }
+
+      return result;
     } catch (error) {
       console.error("AI Reschedule Generation Error:", error);
+
+      // Try fallback if AI service fails
+      if (userId) {
+        const fallbackResult = await FallbackHandler.handleAIError<RescheduleSuggestionContent>(
+          error instanceof Error ? error : new Error(String(error)),
+          "reschedule",
+          input
+        );
+
+        if (fallbackResult.success && fallbackResult.data) {
+          return fallbackResult.data;
+        }
+      }
+
       throw new Error(
         `Failed to generate reschedule: ${error instanceof Error ? error.message : "Unknown error"}`
       );
@@ -413,4 +633,29 @@ export function getAIService(): AIService {
     });
   }
   return aiServiceInstance;
+}
+
+// Enhanced wrapper functions that include userId
+export async function generatePlanWithCache(
+  input: GeneratePlanInput,
+  userId: string
+): Promise<PlanSuggestionContent> {
+  const aiService = getAIService();
+  return aiService.generatePlan(input, userId);
+}
+
+export async function generateBriefingWithCache(
+  input: GenerateBriefingInput,
+  userId: string
+): Promise<BriefingSuggestionContent> {
+  const aiService = getAIService();
+  return aiService.generateBriefing(input, userId);
+}
+
+export async function generateRescheduleWithCache(
+  input: GenerateRescheduleInput,
+  userId: string
+): Promise<RescheduleSuggestionContent> {
+  const aiService = getAIService();
+  return aiService.generateReschedule(input, userId);
 }

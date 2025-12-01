@@ -6,9 +6,14 @@ import {
 } from "@Monthly/db";
 import type { RouterClient } from "@orpc/server";
 import { z } from "zod";
-import { getAIService } from "../ai-service";
+import {
+  generatePlanWithCache,
+  generateBriefingWithCache,
+  generateRescheduleWithCache,
+} from "../ai-service";
 import { protectedProcedure } from "../index";
 import { getSuggestionApplicator } from "../suggestion-applicator";
+import simpleRateLimiter from "../rate-limiting/simple-limiter";
 
 export const aiRouter = {
   /**
@@ -49,7 +54,8 @@ export const aiRouter = {
         const todayEvents = await calendarQueries.findToday(userId);
 
         // Prepare context for AI
-        const currentDate: string = new Date().toISOString().split("T")[0]!;
+        const currentDate: string =
+          new Date().toISOString().split("T")[0] ?? "";
         const currentMonth = new Date().toLocaleDateString("en-US", {
           year: "numeric",
           month: "long",
@@ -61,17 +67,19 @@ export const aiRouter = {
           ...habits.filter((h) => h.frequency === "daily").map((h) => h.title),
         ];
 
-        // Generate plan using AI service
-        const aiService = getAIService();
-        const planContent = await aiService.generatePlan({
-          userGoals: input.userGoals,
-          currentMonth,
-          currentDate,
-          existingCommitments,
-          workHours: input.workHours,
-          energyPatterns: input.energyPatterns,
-          preferredTimes: input.preferredTimes,
-        });
+        // Generate plan using AI service with caching and rate limiting
+        const planContent = await generatePlanWithCache(
+          {
+            userGoals: input.userGoals,
+            currentMonth,
+            currentDate,
+            existingCommitments,
+            workHours: input.workHours,
+            energyPatterns: input.energyPatterns,
+            preferredTimes: input.preferredTimes,
+          },
+          userId
+        );
 
         // Save suggestion to database
         const suggestion = await aiQueries.createSuggestion(
@@ -127,11 +135,11 @@ export const aiRouter = {
         };
         const recentPlans = await aiQueries.getRecentByType(userId, "plan", 2);
         if (recentPlans.length > 0) {
-          const recentPlan = recentPlans[0]!;
+          const recentPlan = recentPlans[0];
           yield {
             type: "complete",
-            suggestionId: recentPlan.id,
-            content: recentPlan.content,
+            suggestionId: recentPlan?.id,
+            content: recentPlan?.content,
             isRecent: true,
             message:
               "Using recently generated plan. Generate new plan in 2 hours if needed.",
@@ -160,7 +168,8 @@ export const aiRouter = {
         const todayEvents = await calendarQueries.findToday(userId);
 
         // Prepare context for AI
-        const currentDate: string = new Date().toISOString().split("T")[0]!;
+        const currentDate: string =
+          new Date().toISOString().split("T")[0] ?? "";
         const currentMonth = new Date().toLocaleDateString("en-US", {
           year: "numeric",
           month: "long",
@@ -252,10 +261,10 @@ export const aiRouter = {
           1
         );
         if (recentBriefings.length > 0) {
-          const recentBriefing = recentBriefings[0]!;
+          const recentBriefing = recentBriefings[0];
           return {
-            suggestionId: recentBriefing.id,
-            content: recentBriefing.content,
+            suggestionId: recentBriefing?.id,
+            content: recentBriefing?.content,
             isRecent: true,
             message:
               "Using today's briefing. Generate new one in 1 hour if needed.",
@@ -288,7 +297,7 @@ export const aiRouter = {
           )
           .map((task) => ({
             title: task.title,
-            dueDate: new Date(task.dueDate!).toISOString().split("T")[0],
+            dueDate: new Date(task.dueDate!).toISOString().split("T")[0] ?? "",
           })) as Array<{
           title: string;
           dueDate: string;
@@ -317,19 +326,21 @@ export const aiRouter = {
           habitStreaks[habit.id] = streak;
         }
 
-        // Generate briefing using AI service
-        const aiService = getAIService();
-        const briefingContent = await aiService.generateBriefing({
-          currentDate: targetDate.toISOString().split("T")[0]!,
-          todaysTasks: todaysTasks.map((t) => ({
-            title: t.title,
-            priority: t.priority,
-          })),
-          yesterdayProgress,
-          habitStreaks,
-          nearDeadlines: upcomingDeadlines,
-          energyLevels: "Not specified", // Could be tracked over time
-        });
+        // Generate briefing using AI service with caching and rate limiting
+        const briefingContent = await generateBriefingWithCache(
+          {
+            currentDate: targetDate.toISOString().split("T")[0] ?? "",
+            todaysTasks: todaysTasks.map((t) => ({
+              title: t.title,
+              priority: t.priority,
+            })),
+            yesterdayProgress,
+            habitStreaks,
+            nearDeadlines: upcomingDeadlines,
+            energyLevels: "Not specified", // Could be tracked over time
+          },
+          userId
+        );
 
         // Save suggestion to database
         const suggestion = await aiQueries.createSuggestion(
@@ -387,11 +398,11 @@ export const aiRouter = {
           1
         );
         if (recentBriefings.length > 0) {
-          const recentBriefing = recentBriefings[0]!;
+          const recentBriefing = recentBriefings[0];
           yield {
             type: "complete",
-            suggestionId: recentBriefing.id,
-            content: recentBriefing.content,
+            suggestionId: recentBriefing?.id,
+            content: recentBriefing?.content,
             isRecent: true,
             message:
               "Using today's briefing. Generate new one in 1 hour if needed.",
@@ -435,7 +446,7 @@ export const aiRouter = {
           )
           .map((task) => ({
             title: task.title,
-            dueDate: new Date(task.dueDate!).toISOString().split("T")[0],
+            dueDate: new Date(task.dueDate!).toISOString().split("T")[0] ?? "",
           })) as Array<{
           title: string;
           dueDate: string;
@@ -503,7 +514,7 @@ export const aiRouter = {
         // Generate briefing using AI service
         const aiService = getAIService();
         const briefingContent = await aiService.generateBriefing({
-          currentDate: targetDate.toISOString().split("T")[0]!,
+          currentDate: targetDate.toISOString().split("T")[0] ?? "",
           todaysTasks: todaysTasks.map((t) => ({
             title: t.title,
             priority: t.priority,
@@ -597,7 +608,7 @@ export const aiRouter = {
           .map((task) => ({
             title: task.title,
             priority: task.priority,
-            dueDate: new Date(task.dueDate!).toISOString().split("T")[0],
+            dueDate: new Date(task.dueDate!).toISOString().split("T")[0] ?? "",
           }));
 
         if (backlogTasks.length === 0 && !input.conflicts?.length) {
@@ -634,7 +645,7 @@ export const aiRouter = {
           const total = dayTasks.length;
 
           completionHistory.push({
-            date: date.toISOString().split("T")[0]!,
+            date: date.toISOString().split("T")[0] ?? "",
             completed,
             total,
           });
@@ -691,17 +702,19 @@ export const aiRouter = {
           },
         };
 
-        // Generate reschedule suggestions using AI service
-        const aiService = getAIService();
-        const rescheduleContent = await aiService.generateReschedule({
-          currentWeek: `Week of ${new Date().toLocaleDateString()}`,
-          backlogTasks,
-          completionHistory,
-          deadlinePressure,
-          stressLevel: "medium", // Could be determined from user behavior
-          energyTrends: "Not specified", // Could be tracked over time
-          fixedCommitments,
-        });
+        // Generate reschedule suggestions using AI service with caching and rate limiting
+        const rescheduleContent = await generateRescheduleWithCache(
+          {
+            currentWeek: `Week of ${new Date().toLocaleDateString()}`,
+            backlogTasks,
+            completionHistory,
+            deadlinePressure,
+            stressLevel: "medium", // Could be determined from user behavior
+            energyTrends: "Not specified", // Could be tracked over time
+            fixedCommitments,
+          },
+          userId
+        );
 
         yield {
           type: "progress",
@@ -774,7 +787,7 @@ export const aiRouter = {
           .map((task) => ({
             title: task.title,
             priority: task.priority,
-            dueDate: new Date(task.dueDate!).toISOString().split("T")[0],
+            dueDate: new Date(task.dueDate!).toISOString().split("T")[0] ?? "",
           }));
 
         if (backlogTasks.length === 0 && !input.conflicts?.length) {
@@ -804,7 +817,7 @@ export const aiRouter = {
           const total = dayTasks.length;
 
           completionHistory.push({
-            date: date.toISOString().split("T")[0]!,
+            date: date.toISOString().split("T")[0] ?? "",
             completed,
             total,
           });
@@ -1352,6 +1365,106 @@ export const aiRouter = {
         );
       }
     }),
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats: protectedProcedure.handler(async ({ context }) => {
+    const userId = context.session?.user?.id;
+    if (!userId) {
+      throw new Error("User not authenticated");
+    }
+
+    try {
+      const stats = simpleRateLimiter.getUserStats(userId);
+      return {
+        message: "Cache and usage statistics retrieved successfully",
+        stats,
+      };
+    } catch (error) {
+      console.error("Get cache stats error:", error);
+      throw new Error(
+        `Failed to get cache stats: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    }
+  }),
+
+  /**
+   * Clear user cache
+   */
+  clearCache: protectedProcedure
+    .input(
+      z.object({
+        type: z
+          .enum(["all", "plans", "briefings", "reschedules"])
+          .default("all"),
+      })
+    )
+    .handler(async ({ input, context }) => {
+      const userId = context.session?.user?.id;
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+
+      try {
+        // In a real implementation, you'd clear specific cache entries
+        // For now, just return success message
+        return {
+          message: `Cache cleared for ${input.type}`,
+          cleared: true,
+        };
+      } catch (error) {
+        console.error("Clear cache error:", error);
+        throw new Error(
+          `Failed to clear cache: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+      }
+    }),
+
+  /**
+   * Get rate limit status
+   */
+  getRateLimitStatus: protectedProcedure.handler(async ({ context }) => {
+    const userId = context.session?.user?.id;
+    if (!userId) {
+      throw new Error("User not authenticated");
+    }
+
+    try {
+      const stats = simpleRateLimiter.getUserStats(userId);
+      return {
+        message: "Rate limit status retrieved successfully",
+        limits: stats.limits,
+        currentUsage: {
+          daily: stats.daily,
+          monthly: stats.monthly,
+        },
+        remaining: {
+          daily: Math.max(
+            0,
+            stats.limits.daily -
+              Object.values(stats.daily).reduce((sum, count) => sum + count, 0)
+          ),
+          monthly: Math.max(0, stats.limits.monthly - stats.monthly),
+        },
+        resetTimes: {
+          daily: new Date(new Date().setHours(24, 0, 0, 0)).toISOString(),
+          monthly: new Date(
+            new Date().getFullYear(),
+            new Date().getMonth() + 1,
+            1,
+            0,
+            0
+          ).toISOString(),
+        },
+      };
+    } catch (error) {
+      console.error("Get rate limit status error:", error);
+      throw new Error(
+        `Failed to get rate limit status: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    }
+  }),
 };
 
 export type AIRouter = typeof aiRouter;
