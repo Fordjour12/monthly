@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { orpc } from "@/utils/orpc";
+import { useMutation } from "@tanstack/react-query";
 
 export default function NewGoalScreen() {
   const router = useRouter();
@@ -26,21 +27,23 @@ export default function NewGoalScreen() {
   const mutedColor = useThemeColor("muted");
   const foregroundColor = useThemeColor("foreground");
 
-  const generatePlan = orpc.ai.generatePlan.useMutation({
-    onSuccess: (data) => {
-      router.push({
-        pathname: "/goals/plan-review",
-        params: {
-          title,
-          planContent: JSON.stringify(data.content),
-        },
-      });
-    },
-    onError: (error) => {
-      console.error("Failed to generate plan:", error);
-      // TODO: Show error toast
-    },
-  });
+  const generatePlan = useMutation(
+    orpc.ai.generatePlan.mutationOptions({
+      onSuccess: (data: any) => {
+        router.push({
+          pathname: "/goals/plan-review",
+          params: {
+            title,
+            planContent: JSON.stringify(data.content),
+          },
+        });
+      },
+      onError: (error: any) => {
+        console.error("Failed to generate plan:", error);
+        // TODO: Show error toast
+      },
+    })
+  );
 
   const handleCreate = () => {
     if (useAI) {
